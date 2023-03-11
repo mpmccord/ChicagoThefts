@@ -1,0 +1,33 @@
+---
+title: "Data Exploration"
+author: "Melanie McCord"
+output: 
+  html_document:
+    code_folding: "show"
+    toc: true
+    toc_float: true
+    theme: cerulean
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(fpp3)
+library(stringr)
+```
+
+# Reading in the Data
+
+```{r}
+chicago_crime <- read.csv("data/thefts_by_month.csv")
+chicago_crime <- chicago_crime %>%
+  select(-X) %>%
+  rename(NumThefts = sum.Count.)
+head(chicago_crime)
+```
+
+```{r}
+chicago_crime_monthly <- chicago_crime %>%
+ mutate(month = month.abb[month]) %>%
+  mutate(Month = str_c(year, month, sep = " "))
+head(chicago_crime_monthly)
+```
