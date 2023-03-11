@@ -13,21 +13,136 @@ output:
 knitr::opts_chunk$set(echo = TRUE)
 library(fpp3)
 library(stringr)
+library(readr)
 ```
 
 # Reading in the Data
+In this part of this study, for initial modeling and analysis, I will be looking at the total number of thefts from January 2001 - March 11, 2023 that were reported. Note that due to the large size of the original dataset (nearly 8 million rows), the raw data is not included in this repository. The raw data can be accessed <a href="https://data.cityofchicago.org/api/views/ijzp-q8t2/rows.csv">here.</a>
+
+For this partition of the data, there are two variables: year/month and the number of thefts reported in each month. The full dataset has more variables, which are described below. Each row in the full dataset represents an individual crime that was reported.
+
+| ID                   | Unique identifier for the record.                                    |
+|----------------------|----------------------------------------------------------------------|
+| Case number          | Chicago id for the case number                                       |
+| Date                 | Date when the incident occurred, this is sometimes a best estimate.  |
+| Block                | The partially redacted address where the incident occurred.          |
+| IUCR                 | The Illinois Unifrom Crime Reporting Code.                           |
+| Primary Type         | The primary description of the IUCR code.                            |
+| Description          | The secondary description of the IUCR code.                          |
+| Location description | The primary description of the location where the incident occurred. |
+| Arrest               | Whether or not the incident resulted in an arrest.                   |
+| Domestic             | Whether or not the incident was a domestic incident.                 |
+| Beat                 | Indicates the beat where the incident occurred.                      |
+| District             | The police district where the incident occurred.                     |
+| Ward                 | The city council district where the incident occurred.               |
+| Community Area       | The community area where the incident occurred.                      |
+| FBI Code             | FBI Code crime classification.                                       |
+| X Coordinate         | The X coordinate location where the incident occurred.               |
+| Y coordinate         | The Y coordinate where the incident occurred.                        |
+| Year                 | Year the incident occurred.                                          |
+| Updated on           | Date and time the record was last updated.                           |
+| Latitude             | The latitude where the incident occurred.                            |
+| Longitude            | The longitude where the incident occurred.                           |
+| Location             | The location of the incident.                                        |
+
 
 ```{r}
 chicago_crime <- read.csv("data/thefts_by_month.csv")
 chicago_crime <- chicago_crime %>%
   select(-X) %>%
-  rename(NumThefts = sum.Count.)
+  rename(NumThefts = sum.Count.) %>%
+  drop_na(month)
 head(chicago_crime)
 ```
 
 ```{r}
 chicago_crime_monthly <- chicago_crime %>%
- mutate(month = month.abb[month]) %>%
-  mutate(Month = str_c(year, month, sep = " "))
+ mutate(month = month.name[month]) %>%
+  mutate(Month = str_c(year, month, sep = " ")) %>%
+  select(Month, NumThefts) %>%
+  mutate(Month = yearmonth(Month)) %>%
+  filter(year(Month) < 2023) %>%
+  as_tsibble(index = Month)
 head(chicago_crime_monthly)
+```
+# Data Analysis
+
+## Analyzing The Number of Thefts {.tabset}
+
+### Boxplot 
+```{r}
+ggplot(chicago_crime_monthly, aes(x = NumThefts)) + geom_boxplot()
+```
+
+### Histogram
+```{r}
+ggplot(chicago_crime_monthly, aes(x = NumThefts)) + geom_histogram()
+```
+
+### Distribution Table
+
+```{r}
+summary(chicago_crime_monthly$NumThefts)
+```
+## Number of Thefts Reported in Chicago By Month
+
+Due to the long time frame of the dataset, it's hard to see exactly where the seasonal pattern is occurring, but there does appear to be a seasonal pattern. There appears to be a general decreasing trend. Initially, I had included the raw data from 2023 as well, but there is a steep drop in March 2023 due to the smaller number of days there, so that is not included here.
+```{r}
+chicago_crime_monthly %>%
+  autoplot(NumThefts)
+```
+
+
+There is really strong positive autocorrelation throughout the monthly data, however it appears to follow a pattern of peaking, sharp decrease, then peaking.
+```{r}
+chicago_crime_monthly %>%
+  ACF(NumThefts) %>%
+  autoplot()
+```
+## Number of Thefts By Season
+
+```{r}
+chicago_crime_monthly %>%
+  gg_season(NumThefts)
+```
+
+```{r}
+chicago_crime_monthly %>%
+  gg_subseries(NumThefts)
+```
+```{r}
+chicago_crime_monthly %>%
+  gg_lag(NumThefts, lags = 12)
+```
+
+## Models
+
+### Transforming the Data
+
+From the initial plot of the distribution, the variance did not appear to be constant. In this section, we will explore and interpret a box cox transformation in order to see if we can get better performance.
+```{r}
+chicago_crime.model <- chicago_crime_monthly %>%
+  fabletools::model(
+    snaive = SNAIVE(NumThefts)
+  )
+chicago_crime.model %>%
+  gg_tsresiduals()
+```
+
+```{r}
+chicago_crime.model <- chicago_crime_monthly %>%
+  fabletools::model(
+    lm = RW(NumThefts ~ drift())
+  )
+chicago_crime.model %>%
+  gg_tsresiduals()
+```
+
+```{r}
+chicago_crime.model <- chicago_crime_monthly %>%
+  fabletools::model(
+    naive = NAIVE(NumThefts)
+  )
+chicago_crime.model %>%
+  gg_tsresiduals()
 ```
