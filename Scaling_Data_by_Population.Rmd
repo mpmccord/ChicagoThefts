@@ -1,0 +1,17 @@
+---
+title: "Scaling the Data by Population"
+author: "Melanie McCord"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(fpp3)
+```
+
+```{r}
+population_data <- read_csv("data/Chicago_Population_Counts.csv", show_col_types = FALSE)
+print(unique(population_data$Year))
+```

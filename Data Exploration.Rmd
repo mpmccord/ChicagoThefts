@@ -1,7 +1,7 @@
 ---
 title: "Data Exploration"
 author: "Melanie McCord"
-output: 
+output:
   html_document:
     code_folding: "show"
     toc: true
@@ -220,6 +220,7 @@ arrests_ts <- arrests %>%
   filter(year(Month) < 2023) %>%
   select(-c(year, month)) %>%
   filter(Arrest == "true") %>%
+  filter(year(Month) < 2023) %>%
   as_tsibble(key = Arrest, index = Month)
 head(arrests_ts)
 ```
@@ -243,4 +244,54 @@ arrests_ts <- arrests_ts %>%
   mutate(CountTransformed = box_cox(Count, lambda))
 arrests_ts %>%
   autoplot(CountTransformed)
+```
+
+```{r}
+arrests_ts %>%
+  ACF(Count) %>%
+  autoplot()
+```
+
+```{r}
+arrests_ts %>%
+  model(
+    classical_decomposition(Count, type = "multiplicative")
+  ) %>%
+  components() %>%
+  autoplot()
+```
+
+```{r}
+fc <- arrests_ts %>%
+  stretch_tsibble(.init = 12, .step = 1) %>%
+  filter(.id < max(.id)) %>%
+  model(
+    RW(Count ~ drift())
+  ) %>% forecast(h = 8) |>
+  group_by(.id) |>
+  mutate(h = row_number()) |>
+  ungroup() |>
+  as_fable(response = "Count", distribution = Count)
+fc |>
+  accuracy(arrests_ts, by = c("h", ".model")) |>
+  ggplot(aes(x = h, y = RMSE)) +
+  geom_point()
+```
+
+```{r}
+fc <- arrests_ts %>%
+  stretch_tsibble(.init = 12, .step = 1) %>%
+  filter(.id < max(.id)) %>%
+  model(
+    SNAIVE(Count)
+  ) %>% forecast(h = 8) |>
+  group_by(.id) |>
+  mutate(h = row_number()) |>
+  ungroup() |>
+  as_fable(response = "Count", distribution = Count)
+fc |>
+  accuracy(arrests_ts, by = c("h", ".model")) |>
+  ggplot(aes(x = h, y = RMSE)) +
+  geom_point()
+
 ```
