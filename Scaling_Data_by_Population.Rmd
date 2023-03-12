@@ -12,6 +12,36 @@ library(fpp3)
 ```
 
 ```{r}
-population_data <- read_csv("data/Chicago_Population_Counts.csv", show_col_types = FALSE)
-print(unique(population_data$Year))
+cook_county_estimates <- read_csv("data/cook_county_estimates_2005-2019.csv")
+chicago_population <- read_csv("data/Chicago_Population_Counts.csv")
+```
+
+```{r}
+cook_county_estimates_population <- cook_county_estimates %>%
+  filter(variable == "total_pop") %>%
+  select(-variable) %>%
+  mutate(year = year + 2004)
+cook_county_estimates_population
+```
+
+
+
+```{r}
+cook_county_ts <- cook_county_estimates_population %>%
+  select(c(year, estimate)) %>%
+  rename(population = estimate) %>%
+  as_tsibble(index = year)
+```
+
+```{r}
+thefts <- read_csv("data/year_month_num_thefts.csv")%>%
+  select(c(Month, NumThefts))
+
+thefts_ts <- thefts %>%
+  mutate(Month = yearmonth(Month)) %>%
+  mutate(Year = year(Month))
+head(thefts_ts)
+```
+
+```{r}
 ```
