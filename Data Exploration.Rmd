@@ -12,14 +12,17 @@ output:
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 library(fpp3)
-library(stringr)
-library(readr)
+library(tidyverse)
 ```
 
-# Reading in the Data
+# Introduction
 In this part of this study, for initial modeling and analysis, I will be looking at the total number of thefts from January 2001 - March 11, 2023 that were reported. Note that due to the large size of the original dataset (nearly 8 million rows), the raw data is not included in this repository. The raw data can be accessed <a href="https://data.cityofchicago.org/api/views/ijzp-q8t2/rows.csv">here.</a>
 
+## Data Overview
+
 For this partition of the data, there are two variables: year/month and the number of thefts reported in each month. The full dataset has more variables, which are described below. Each row in the full dataset represents an individual crime that was reported.
+
+### Variables
 
 | ID                   | Unique identifier for the record.                                    |
 |----------------------|----------------------------------------------------------------------|
@@ -67,7 +70,7 @@ head(chicago_crime_monthly)
 ```
 # Data Analysis
 
-## Analyzing The Number of Thefts {.tabset}
+## Number of Thefts Over Time
 
 ### Boxplot 
 ```{r}
@@ -99,7 +102,8 @@ chicago_crime_monthly %>%
   ACF(NumThefts) %>%
   autoplot()
 ```
-## Number of Thefts By Season
+
+## Number of Thefts By Year
 
 ```{r}
 chicago_crime_monthly %>%
@@ -117,9 +121,7 @@ chicago_crime_monthly %>%
 
 ## Models
 
-### Transforming the Data
 
-From the initial plot of the distribution, the variance did not appear to be constant. In this section, we will explore and interpret a box cox transformation in order to see if we can get better performance.
 ```{r}
 chicago_crime.model <- chicago_crime_monthly %>%
   fabletools::model(
@@ -145,4 +147,100 @@ chicago_crime.model <- chicago_crime_monthly %>%
   )
 chicago_crime.model %>%
   gg_tsresiduals()
+```
+
+```{r}
+all_models <- chicago_crime_monthly %>%
+  fabletools::model(
+    snaive = SNAIVE(NumThefts),
+    lm = RW(NumThefts ~ drift())
+  )
+all_models %>%
+  forecast(h = "5 years") %>%
+  autoplot(filter(chicago_crime_monthly, year(Month) > 2010))
+```
+
+### Transforming the Data
+
+```{r}
+lambda <- chicago_crime_monthly |>
+  features(NumThefts, features = guerrero) |>
+  pull(lambda_guerrero)
+lambda
+chicago_crime_monthly <- chicago_crime_monthly %>%
+  mutate(NumTheftsTransformed = box_cox(NumThefts, lambda))
+chicago_crime_monthly %>%
+  autoplot(NumTheftsTransformed)
+```
+
+```{r}
+snaive.transformed <- chicago_crime_monthly %>%
+  fabletools::model(
+    snaive = SNAIVE(NumTheftsTransformed)
+  )
+snaive.transformed %>%
+  gg_tsresiduals()
+```
+
+```{r}
+lm.transformed <- chicago_crime_monthly %>%
+  fabletools::model(
+    snaive = RW(NumTheftsTransformed ~ drift())
+  )
+lm.transformed %>%
+  gg_tsresiduals()
+```
+
+```{r}
+all_models.transformed <- chicago_crime_monthly %>%
+  fabletools::model(
+    snaive = SNAIVE(NumTheftsTransformed),
+    lm = RW(NumTheftsTransformed ~ drift())
+  )
+all_models.transformed %>%
+  forecast(h = "2 years") %>%
+  autoplot(filter(chicago_crime_monthly, Month > yearmonth("Jan 2012")))
+```
+
+## Arrests Over Time
+```{r}
+arrests = read.csv("data/arrests_by_month.csv")
+arrests <- arrests %>%
+  select(-X) %>%
+  rename(Count = sum.Count.) %>%
+  drop_na(month)
+head(arrests)
+```
+
+```{r}
+arrests_ts <- arrests %>%
+ mutate(month = month.name[month]) %>%
+  mutate(Month = str_c(year, month, sep = " ")) %>%
+  mutate(Month = yearmonth(Month)) %>%
+  filter(year(Month) < 2023) %>%
+  select(-c(year, month)) %>%
+  filter(Arrest == "true") %>%
+  as_tsibble(key = Arrest, index = Month)
+head(arrests_ts)
+```
+
+```{r}
+arrests_ts %>%
+  autoplot(Count)
+```
+
+```{r}
+arrests_ts %>%
+  gg_season(Count)
+```
+
+```{r}
+lambda <- arrests_ts |>
+  features(Count, features = guerrero) |>
+  pull(lambda_guerrero)
+lambda
+arrests_ts <- arrests_ts %>%
+  mutate(CountTransformed = box_cox(Count, lambda))
+arrests_ts %>%
+  autoplot(CountTransformed)
 ```
