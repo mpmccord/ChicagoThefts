@@ -1,0 +1,203 @@
+---
+title: "Project-1-Data-Exploration"
+author: "Melanie McCord"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(fpp3)
+```
+# Introduction
+In this part of this study, for initial modeling and analysis, I will be looking at the total number of thefts from January 2001 - March 11, 2023 that were reported. Note that due to the large size of the original dataset (nearly 8 million rows), the raw data is not included in this repository. The raw data can be accessed <a href="https://data.cityofchicago.org/api/views/ijzp-q8t2/rows.csv">here.</a>
+
+## Data Overview
+
+For this partition of the data, there are two variables: year/month and the number of thefts reported in each month. The full dataset has more variables, which are described below. Each row in the full dataset represents an individual crime that was reported.
+
+### Variables
+
+| ID                   | Unique identifier for the record.                                    |
+|----------------------|----------------------------------------------------------------------|
+| Case number          | Chicago id for the case number                                       |
+| Date                 | Date when the incident occurred, this is sometimes a best estimate.  |
+| Block                | The partially redacted address where the incident occurred.          |
+| IUCR                 | The Illinois Unifrom Crime Reporting Code.                           |
+| Primary Type         | The primary description of the IUCR code.                            |
+| Description          | The secondary description of the IUCR code.                          |
+| Location description | The primary description of the location where the incident occurred. |
+| Arrest               | Whether or not the incident resulted in an arrest.                   |
+| Domestic             | Whether or not the incident was a domestic incident.                 |
+| Beat                 | Indicates the beat where the incident occurred.                      |
+| District             | The police district where the incident occurred.                     |
+| Ward                 | The city council district where the incident occurred.               |
+| Community Area       | The community area where the incident occurred.                      |
+| FBI Code             | FBI Code crime classification.                                       |
+| X Coordinate         | The X coordinate location where the incident occurred.               |
+| Y coordinate         | The Y coordinate where the incident occurred.                        |
+| Year                 | Year the incident occurred.                                          |
+| Updated on           | Date and time the record was last updated.                           |
+| Latitude             | The latitude where the incident occurred.                            |
+| Longitude            | The longitude where the incident occurred.                           |
+| Location             | The location of the incident.                                        |
+
+### Population Data Overview
+The population data for this project was extracted using the US Census API ACS, which provided population data from 2005-2019 from Cook County. Since Cook County is the base of the Chicago metropolitan area, I chose to extract this data, and include a variable that scaled the number of thefts over time by the yearly population. So far, I haven't been able to track down monthly population data for the Chicago area.
+Note that also the data from 2001-2005 is harder to access as it is only available through the population estimates API. Therefore, although the original dataset goes from 2001-2023, at this time, I am focusing on 2005-2019. The population from the Chicago website is limited to 2018-2022. Note that this excludes a large portion of the data.
+```{r}
+thefts <- read_csv("data/thefts_per_capita.csv") %>%
+  select(-year)
+chicago_population <- read_csv("data/cook_county_estimates_2005-2019.csv") %>%
+  mutate(year = year + 2004) %>%
+  pivot_wider(names_from = variable, values_from = estimate)
+head(thefts)
+head(chicago_population)
+```
+
+```{r}
+thefts_ts <- thefts %>%
+  mutate(Month = yearmonth(Month)) %>%
+  as_tsibble(index = Month)
+chicago_population_ts <- chicago_population %>%
+  as_tsibble(key = c(GEOID, NAME), index = year)
+```
+
+# Data Exploration
+
+## Time Series Plots of Variables {.tabset}
+
+### Population Of Cook County
+```{r}
+chicago_population_ts %>%
+  autoplot(total_pop)
+```
+
+### Median Income in Cook County
+```{r}
+chicago_population_ts %>%
+  autoplot(median_income)
+```
+
+### Raw Count of Thefts
+```{r}
+thefts_ts %>%
+  autoplot(NumThefts)
+```
+
+### Thefts in Chicago Per 1000 Residents in Cook County
+```{r}
+thefts_ts %>%
+  autoplot(TheftsPer1000)
+```
+
+
+## Box Cox Transformation of Number of Thefts
+
+
+# Models
+
+## Classical Decomposition of the Number of Thefts From 2019-2019
+
+### Multiplicative Decomposition
+```{r}
+thefts_ts %>%
+  model(
+    classical_decomposition(NumThefts, type = "multiplicative")
+  ) %>%
+  components() %>%
+  autoplot()
+```
+
+
+```{r}
+thefts_ts %>%
+  model(
+    classical_decomposition(NumThefts, type = "multiplicative")
+  ) %>%
+  components() %>%
+  autoplot()
+```
+
+Initially, I will test the four simple models that we've covered in class: naive, seasonal naive, mean, and random walk with drift. There appears to be a stronger seasonal component than trend component, so my guess is that seasonal naive will probably perform the best, but I will test all 4 models with a test set and predicted set.
+
+## Raw Count of Thefts
+
+### Forecasting Number of Thefts from 2017-2019 {.tabset}
+
+#### Model
+```{r}
+thefts_train <- thefts_ts %>%
+  filter(year(Month) <= 2017)
+raw_count.model <- thefts_train %>%
+  model(
+    naive = NAIVE(NumThefts),
+    snaive = SNAIVE(NumThefts),
+    mean = MEAN(NumThefts),
+    lm = RW(NumThefts ~ drift()),
+    
+  ) 
+raw_count.model.forecast <- raw_count.model %>%
+  forecast(h = "2 years")
+raw_count.model.forecast
+```
+
+#### Plot
+```{r}
+raw_count.model.forecast %>%
+  autoplot(thefts_ts)
+```
+
+#### Tables
+```{r}
+raw_count.model.forecast %>%
+  accuracy(thefts_ts)
+```
+
+## Forecasting Number of Thefts Per Capita
+
+```{r}
+raw_count.model <- thefts_train %>%
+  model(
+    naive = NAIVE(TheftsPer1000),
+    snaive = SNAIVE(TheftsPer1000),
+    mean = MEAN(TheftsPer1000),
+    lm = RW(TheftsPer1000 ~ drift()),
+    
+  ) 
+raw_count.model.forecast <- raw_count.model %>%
+  forecast(h = "2 years")
+raw_count.model.forecast
+```
+
+#### Plot
+```{r}
+raw_count.model.forecast %>%
+  autoplot(thefts_ts)
+```
+
+#### Tables
+```{r}
+raw_count.model.forecast %>%
+  accuracy(thefts_ts)
+```
+
+### Residuals of the Best Method
+
+As I expected, the best performing model appears to be the seasonal naive model, across all measures. Now, I will look at the residuals to see whether they look like white noise.
+
+```{r}
+raw_count.snaive <- thefts_train %>%
+  model(
+    snaive = SNAIVE(TheftsPer1000)
+  )
+raw_count.snaive %>%
+  gg_tsresiduals()
+```
+
+
+There is still significant autocorrelation in these residuals, and the distribution looks slightly left skewed. Therefore, the seasonal naive method is not appropriate for predicting the number of thefts over time.
