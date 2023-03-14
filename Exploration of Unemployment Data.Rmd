@@ -1,0 +1,33 @@
+---
+title: "Exploring Unemployment Data"
+author: "Melanie McCord"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(fpp3)
+library(readxl)
+```
+
+```{r}
+unemployment <- read_excel("data/non_seasonal_unemployment.xlsx", skip = 11)
+unemployment <- unemployment %>%
+  pivot_longer(names_to = "Month", cols = -c(Year)) %>%
+  mutate(Month = str_c(Month, " ", Year)) %>%
+  select(-Year)
+write_csv(unemployment, "data/unemployment_long.csv")
+```
+
+```{r}
+unemployment_ts <- unemployment %>%
+  mutate(Month = yearmonth(Month)) %>%
+  as_tsibble(index = Month)
+```
+
+```{r}
+unemployment_ts %>%
+  autoplot()
+```

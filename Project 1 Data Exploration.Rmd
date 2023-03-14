@@ -27,7 +27,7 @@ For this partition of the data, there are two variables: year/month and the numb
 | Case number          | Chicago id for the case number                                       |
 | Date                 | Date when the incident occurred, this is sometimes a best estimate.  |
 | Block                | The partially redacted address where the incident occurred.          |
-| IUCR                 | The Illinois Unifrom Crime Reporting Code.                           |
+| IUCR                 | The Illinois Uniform Crime Reporting Code.                           |
 | Primary Type         | The primary description of the IUCR code.                            |
 | Description          | The secondary description of the IUCR code.                          |
 | Location description | The primary description of the location where the incident occurred. |
@@ -71,23 +71,72 @@ chicago_population_ts <- chicago_population %>%
 
 ## Time Series Plots of Variables {.tabset}
 
+### Raw Number of Thefts
+
+```{r}
+chicago_crime <- read.csv("data/thefts_by_month.csv")
+chicago_crime <- chicago_crime %>%
+  select(-X) %>%
+  rename(NumThefts = sum.Count.) %>%
+  drop_na(month)
+head(chicago_crime)
+```
+
+```{r}
+chicago_crime_monthly <- chicago_crime %>%
+ mutate(month = month.name[month]) %>%
+  mutate(Month = str_c(year, month, sep = " ")) %>%
+  select(Month, NumThefts) %>%
+  mutate(Month = yearmonth(Month)) %>%
+  filter(year(Month) < 2023) %>%
+  as_tsibble(index = Month)
+head(chicago_crime_monthly)
+```
+
+```{r}
+chicago_crime_monthly %>%
+  autoplot(NumThefts)
+```
+
+
+```{r}
+chicago_crime_monthly %>%
+  model (
+    classical_decomposition(NumThefts, type = "multiplicative")
+  ) %>%
+  components() %>%
+  autoplot()
+
+chicago_crime_monthly %>%
+  model (
+    classical_decomposition(NumThefts, type = "additive")
+  ) %>%
+  components() %>%
+  autoplot()
+```
+
+```{r}
+chicago_crime_monthly %>%
+  ACF(NumThefts) %>%
+  autoplot()
+```
+
+```{r}
+chicago_crime_monthly %>%
+  gg_season(NumThefts)
+```
+
+```{r}
+chicago_crime_monthly %>%
+  gg_subseries(NumThefts)
+```
+
 ### Population Of Cook County
 ```{r}
 chicago_population_ts %>%
   autoplot(total_pop)
 ```
 
-### Median Income in Cook County
-```{r}
-chicago_population_ts %>%
-  autoplot(median_income)
-```
-
-### Raw Count of Thefts
-```{r}
-thefts_ts %>%
-  autoplot(NumThefts)
-```
 
 ### Thefts in Chicago Per 1000 Residents in Cook County
 ```{r}
@@ -96,18 +145,15 @@ thefts_ts %>%
 ```
 
 
-## Box Cox Transformation of Number of Thefts
-
-
 # Models
 
-## Classical Decomposition of the Number of Thefts From 2019-2019
+## Classical Decomposition of the Number of Thefts Per 1000 Residents of Cook County
 
 ### Multiplicative Decomposition
 ```{r}
 thefts_ts %>%
   model(
-    classical_decomposition(NumThefts, type = "multiplicative")
+    classical_decomposition(TheftsPer1000, type = "multiplicative")
   ) %>%
   components() %>%
   autoplot()
@@ -143,7 +189,8 @@ raw_count.model <- thefts_train %>%
   ) 
 raw_count.model.forecast <- raw_count.model %>%
   forecast(h = "2 years")
-raw_count.model.forecast
+raw_count.model.forecast %>%
+  autoplot(filter(thefts_ts, year(Month) >= 2015))
 ```
 
 #### Plot
@@ -161,7 +208,7 @@ raw_count.model.forecast %>%
 ## Forecasting Number of Thefts Per Capita
 
 ```{r}
-raw_count.model <- thefts_train %>%
+percapita.model <- thefts_train %>%
   model(
     naive = NAIVE(TheftsPer1000),
     snaive = SNAIVE(TheftsPer1000),
@@ -169,20 +216,21 @@ raw_count.model <- thefts_train %>%
     lm = RW(TheftsPer1000 ~ drift()),
     
   ) 
-raw_count.model.forecast <- raw_count.model %>%
+percapita.model.forecast <- percapita.model %>%
   forecast(h = "2 years")
-raw_count.model.forecast
+percapita.model.forecast %>%
+  autoplot(thefts_ts)
 ```
 
 #### Plot
 ```{r}
 raw_count.model.forecast %>%
-  autoplot(thefts_ts)
+  accuracy(thefts_ts)
 ```
 
 #### Tables
 ```{r}
-raw_count.model.forecast %>%
+percapita.model.forecast %>%
   accuracy(thefts_ts)
 ```
 
@@ -199,5 +247,78 @@ raw_count.snaive %>%
   gg_tsresiduals()
 ```
 
-
 There is still significant autocorrelation in these residuals, and the distribution looks slightly left skewed. Therefore, the seasonal naive method is not appropriate for predicting the number of thefts over time.
+
+## Exploring the Unemployment Variable
+```{r}
+unemployment <- read_csv("data/unemployment_long.csv")
+unemployment_ts <- unemployment %>%
+  mutate(Month = yearmonth(Month)) %>%
+  as_tsibble(index = Month)
+```
+
+
+```{r}
+unemployment_ts %>%
+  autoplot(value)
+```
+
+### Classical Decomposition {.tabset}
+
+#### Additive
+```{r}
+unemployment_ts %>%
+  model(
+    classical_decomposition(value, type = "additive")
+  ) %>%
+  components() %>%
+  autoplot()
+```
+
+#### Multiplicative
+```{r}
+unemployment_ts %>%
+  model(
+    classical_decomposition(value, type = "multiplicative")
+  ) %>%
+  components() %>%
+  autoplot()
+```
+
+
+While there is a trend component, it is not a linear trend. There is also a strong seasonal component to the data.
+
+```{r}
+fc <- unemployment_ts %>%
+  stretch_tsibble(.init = 3, .step = 1) %>%
+  filter(.id < max(.id)) %>%
+  model(
+    snaive = SNAIVE(value),
+    lm = RW(value ~ drift()),
+    mean = MEAN(value),
+    naive = NAIVE(value),
+  ) %>% forecast(h = 3) |>
+  group_by(.id) |>
+  mutate(h = row_number()) |>
+  ungroup() |>
+  as_fable(response = "value", distribution = value)
+```
+
+
+```{r}
+unemployment_ts |>
+  model(RW(value ~ drift())) |>
+  gg_tsresiduals()
+```
+
+```{r}
+chicago_population <- read_csv("data/Chicago_Population_Counts.csv") %>%
+  filter(`Geography Type` == "Citywide")
+chicago_pop_ts <- chicago_population %>%
+  as_tsibble(index = Year, key = c(`Geography Type`, `Geography`, `Record ID`))
+```
+
+```{r}
+chicago_pop_ts %>%
+  ggplot(aes(x = Year, y = `Population - Total`)) + geom_line() + geom_point()
+```

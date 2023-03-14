@@ -73,11 +73,25 @@ head(bay_area_multi_year)
 ```
 
 ```{r}
+for (i in 2012:2022) {
+  my_vars <- c(
+  total_pop = "B01003_001")
+zipChicagoDf <- get_acs(geography = 'zcta', variables = c( total_pop = "B01003_001"),year = i, geometry = FALSE, survey="acs1") %>%
+                  select(GEOID, NAME, variable, estimate) %>% 
+                  filter(str_detect( GEOID,"^606")) %>%  ## add a str filter
+                  spread(variable, estimate) %>%
+  mutate(year = i)
+print(zipChicagoDf)
+}
+
+```
+
+```{r}
 years <-2005:2019
 
 # which counties?
 my_counties <- c(
-  "Cook"
+  "Chicago"
   )
 
 # which census variables?
@@ -87,17 +101,14 @@ my_vars <- c(
   )
 
 # loop over list of years and get 1 year acs estimates
-cook_county_multiyears <- map_dfr(
+chicago <- map_dfr(
   years,
-  ~ get_acs(
-      geography = "county",
-      variables = my_vars,
-      state = "IL",
-      county = my_counties,
-      year = .x,
-      survey = "acs1",
-      geometry = FALSE
-      ),
+  ~ get_acs(geography = 'zcta', variables = c( total_pop = "B01003_001"),year = .x, geometry = FALSE, survey = "acs1") %>%
+                  select(GEOID, NAME, variable, estimate) %>% 
+                  filter(str_detect( GEOID,"^606")) %>%  ## add a str filter
+                  spread(variable, estimate) %>% 
+                  select(GEOID, total_pop) %>%
+  summarize(Population = sum(total_pop)),
   .id = "year"  # when combining results, add id var (name of list item)
   ) %>%
   select(-moe) %>%  # shhhh
