@@ -48,7 +48,7 @@ For this partition of the data, there are two variables: year/month and the numb
 
 ### Population Data Overview
 The population data for this project was extracted using the US Census API ACS, which provided population data from 2005-2019 from Cook County. Since Cook County is the base of the Chicago metropolitan area, I chose to extract this data, and include a variable that scaled the number of thefts over time by the yearly population. So far, I haven't been able to track down monthly population data for the Chicago area.
-Note that also the data from 2001-2005 is harder to access as it is only available through the population estimates API. Therefore, although the original dataset goes from 2001-2023, at this time, I am focusing on 2005-2019. The population from the Chicago website is limited to 2018-2022. Note that this excludes a large portion of the data.
+Note that also the data from 2001-2005 is harder to access as it is only available through the population estimates API. Therefore, although the original dataset goes from 2001-2023, at this time, I am focusing on 2005-2019. The population from the Chicago website is limited to 2018-2022.
 ```{r}
 thefts <- read_csv("data/thefts_per_capita.csv") %>%
   select(-year)
@@ -101,24 +101,13 @@ chicago_crime_monthly %>%
 
 ```{r}
 chicago_crime_monthly %>%
-  model (
-    classical_decomposition(NumThefts, type = "multiplicative")
-  ) %>%
-  components() %>%
-  autoplot()
-
-chicago_crime_monthly %>%
-  model (
-    classical_decomposition(NumThefts, type = "additive")
-  ) %>%
-  components() %>%
+  ACF(NumThefts) %>%
   autoplot()
 ```
 
 ```{r}
 chicago_crime_monthly %>%
-  ACF(NumThefts) %>%
-  autoplot()
+  gg_lag(NumThefts, lags = 1:12)
 ```
 
 ```{r}
@@ -132,6 +121,8 @@ chicago_crime_monthly %>%
 ```
 
 ### Population Of Cook County
+
+Note: I am working on getting the population of Chicago instead, but this is more complicated to mine from and will be a stretch goal.
 ```{r}
 chicago_population_ts %>%
   autoplot(total_pop)
@@ -152,21 +143,13 @@ thefts_ts %>%
 ### Multiplicative Decomposition
 ```{r}
 thefts_ts %>%
-  model(
-    classical_decomposition(TheftsPer1000, type = "multiplicative")
-  ) %>%
-  components() %>%
-  autoplot()
+  gg_lag(TheftsPer1000, lags = 1:12)
 ```
 
 
 ```{r}
 thefts_ts %>%
-  model(
-    classical_decomposition(NumThefts, type = "multiplicative")
-  ) %>%
-  components() %>%
-  autoplot()
+  gg_season(TheftsPer1000)
 ```
 
 Initially, I will test the four simple models that we've covered in class: naive, seasonal naive, mean, and random walk with drift. There appears to be a stronger seasonal component than trend component, so my guess is that seasonal naive will probably perform the best, but I will test all 4 models with a test set and predicted set.
@@ -268,11 +251,15 @@ unemployment_ts %>%
 #### Additive
 ```{r}
 unemployment_ts %>%
-  model(
-    classical_decomposition(value, type = "additive")
-  ) %>%
-  components() %>%
-  autoplot()
+  gg_lag(value, lags = 1:12)
+```
+```{r}
+unemployment_ts %>%
+  gg_season()
+```
+```{r}
+unemployment_ts %>%
+  gg_subseries(value)
 ```
 
 #### Multiplicative
@@ -319,6 +306,26 @@ chicago_pop_ts <- chicago_population %>%
 ```
 
 ```{r}
+# Data from the Chicago.gov website related to population
 chicago_pop_ts %>%
   ggplot(aes(x = Year, y = `Population - Total`)) + geom_line() + geom_point()
+```
+
+```{r}
+chicago_crime_with_chicago_pop <- chicago_crime_monthly %>%
+  mutate(Year = year(Month))
+
+chicago_crime_with_chicago_pop <- chicago_crime_with_chicago_pop %>%
+  filter(Year >= 2018) %>%
+  inner_join(chicago_pop_ts, by = "Year") %>%
+    mutate(TheftsPerCapitaChicago = NumThefts / `Population - Total` * 1000)
+head(chicago_crime_with_chicago_pop)
+```
+
+```{r}
+chicago_crime_with_chicago_pop %>%
+  autoplot(TheftsPerCapitaChicago)
+
+chicago_crime_with_chicago_pop %>%
+  autoplot(NumThefts)
 ```

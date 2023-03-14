@@ -73,10 +73,11 @@ head(bay_area_multi_year)
 ```
 
 ```{r}
-for (i in 2012:2022) {
+for (i in 2012:2018) {
   my_vars <- c(
   total_pop = "B01003_001")
-zipChicagoDf <- get_acs(geography = 'zcta', variables = c( total_pop = "B01003_001"),year = i, geometry = FALSE, survey="acs1") %>%
+
+zipChicagoDf <- get_acs(geography = 'zcta', variables = c( total_pop = "B01003_001"),year = i, geometry = FALSE, survey="acs5") %>%
                   select(GEOID, NAME, variable, estimate) %>% 
                   filter(str_detect( GEOID,"^606")) %>%  ## add a str filter
                   spread(variable, estimate) %>%
@@ -87,7 +88,20 @@ print(zipChicagoDf)
 ```
 
 ```{r}
-years <-2005:2019
+bay_area_multi_year <- map_dfr(
+  years,
+  ~ get_acs(geography = 'zcta', variables = c( total_pop = "B01003_001"),year = i, geometry = FALSE, survey="acs5") %>%
+                  select(GEOID, NAME, variable, estimate) %>% 
+                  filter(str_detect( GEOID,"^606")) %>%  ## add a str filter
+                  spread(variable, estimate),
+  .id = "year"  # when combining results, add id var (name of list item)
+  ) %>%
+  select(-moe) %>%  # shhhh
+  arrange(variable, NAME)
+```
+
+```{r}
+years <-2005:2009
 
 # which counties?
 my_counties <- c(
@@ -118,4 +132,31 @@ chicago <- map_dfr(
 
 ```{r}
 write_csv(cook_county_multiyears, "data/cook_county_estimates_2005-2019.csv")
+```
+
+```{r}
+years <- 2015:2022
+chicago <- map_dfr(
+  years,
+  ~get_estimates(
+  geography = "place",
+  product = "population",
+  year = .x,
+  output = "tidy",
+  geometry = FALSE,
+  keep_geo_vars = FALSE,
+  shift_geo = FALSE,
+  key = NULL,
+  show_call = FALSE,
+) %>%
+  pivot_wider(names_from = variable, values_from = value) %>%
+  summarize(Population = sum(POP)),
+  .id = "year"  # when combining results, add id var (name of list item)
+  ) %>%
+  select(-moe) %>%
+  arrange(variable, NAME)
+```
+
+```{r}
+chicago
 ```
