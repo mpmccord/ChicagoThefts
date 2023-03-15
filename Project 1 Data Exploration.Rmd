@@ -49,6 +49,9 @@ For this partition of the data, there are two variables: year/month and the numb
 ### Population Data Overview
 The population data for this project was extracted using the US Census API ACS, which provided population data from 2005-2019 from Cook County. Since Cook County is the base of the Chicago metropolitan area, I chose to extract this data, and include a variable that scaled the number of thefts over time by the yearly population. So far, I haven't been able to track down monthly population data for the Chicago area.
 Note that also the data from 2001-2005 is harder to access as it is only available through the population estimates API. Therefore, although the original dataset goes from 2001-2023, at this time, I am focusing on 2005-2019. The population from the Chicago website is limited to 2018-2022.
+
+Additionally, I have chosen to focus on monthly unemployment data from 2001-2022 as a predictor of thefts, from the same time period.
+
 ```{r}
 thefts <- read_csv("data/thefts_per_capita.csv") %>%
   select(-year)
@@ -94,14 +97,32 @@ head(chicago_crime_monthly)
 ```
 
 ```{r}
+lambda <- chicago_crime_monthly |>
+  features(NumThefts, features = guerrero) |>
+  pull(lambda_guerrero)
+lambda
 chicago_crime_monthly %>%
   autoplot(NumThefts)
+  lambda <- thefts_ts |>
+  features(TheftsPer1000, features = guerrero) |>
+  pull(lambda_guerrero)
+lambda
+thefts_ts <- thefts_ts  %>%
+  mutate(TheftsPer1000Transformed = box_cox(TheftsPer1000, lambda))
+chicago_crime_monthly <- chicago_crime_monthly %>%
+  mutate(NumTheftsTransformed = box_cox(NumThefts, lambda))
+chicago_crime_monthly %>%
+  autoplot(NumTheftsTransformed)
 ```
 
 
 ```{r}
 chicago_crime_monthly %>%
   ACF(NumThefts) %>%
+  autoplot()
+
+chicago_crime_monthly %>%
+  ACF(NumTheftsTransformed) %>%
   autoplot()
 ```
 
@@ -126,6 +147,9 @@ Note: I am working on getting the population of Chicago instead, but this is mor
 ```{r}
 chicago_population_ts %>%
   autoplot(total_pop)
+
+chicago_population_ts %>%
+  features(total_pop, )
 ```
 
 
@@ -133,6 +157,8 @@ chicago_population_ts %>%
 ```{r}
 thefts_ts %>%
   autoplot(TheftsPer1000)
+thefts_ts %>%
+  autoplot(TheftsPer1000Transformed)
 ```
 
 
@@ -160,7 +186,10 @@ Initially, I will test the four simple models that we've covered in class: naive
 
 #### Model
 ```{r}
-thefts_train <- thefts_ts %>%
+lambda <- chicago_crime_monthly |>
+  features(NumThefts, features = guerrero) |>
+  pull(lambda_guerrero)
+thefts_train <- chicago_crime_monthly %>%
   filter(year(Month) <= 2017)
 raw_count.model <- thefts_train %>%
   model(
@@ -171,26 +200,44 @@ raw_count.model <- thefts_train %>%
     
   ) 
 raw_count.model.forecast <- raw_count.model %>%
-  forecast(h = "2 years")
+  forecast(h = "5 years")
 raw_count.model.forecast %>%
   autoplot(filter(thefts_ts, year(Month) >= 2015))
+```
+
+```{r}
+thefts_train <- chicago_crime_monthly %>%
+  filter(year(Month) <= 2020)
+raw_count.model <- thefts_train %>%
+  model(
+    snaive = SNAIVE(NumTheftsTransformed)
+    
+  ) 
+raw_count.model.forecast <- raw_count.model %>%
+  forecast(h = "3 years")
+raw_count.model.forecast %>%
+  autoplot(chicago_crime_monthly)
+raw_count.model %>%
+  gg_tsresiduals()
 ```
 
 #### Plot
 ```{r}
 raw_count.model.forecast %>%
-  autoplot(thefts_ts)
+  autoplot(chicago_crime_monthly)
 ```
 
 #### Tables
 ```{r}
 raw_count.model.forecast %>%
-  accuracy(thefts_ts)
+  accuracy(chicago_crime_monthly)
 ```
 
 ## Forecasting Number of Thefts Per Capita
 
 ```{r}
+thefts_train <- thefts_ts %>%
+  filter(year(Month) < 2017)
 percapita.model <- thefts_train %>%
   model(
     naive = NAIVE(TheftsPer1000),
@@ -208,7 +255,7 @@ percapita.model.forecast %>%
 #### Plot
 ```{r}
 raw_count.model.forecast %>%
-  accuracy(thefts_ts)
+  accuracy(chicago_crime_monthly)
 ```
 
 #### Tables
@@ -262,19 +309,6 @@ unemployment_ts %>%
   gg_subseries(value)
 ```
 
-#### Multiplicative
-```{r}
-unemployment_ts %>%
-  model(
-    classical_decomposition(value, type = "multiplicative")
-  ) %>%
-  components() %>%
-  autoplot()
-```
-
-
-While there is a trend component, it is not a linear trend. There is also a strong seasonal component to the data.
-
 ```{r}
 fc <- unemployment_ts %>%
   stretch_tsibble(.init = 3, .step = 1) %>%
@@ -314,12 +348,12 @@ chicago_pop_ts %>%
 ```{r}
 chicago_crime_with_chicago_pop <- chicago_crime_monthly %>%
   mutate(Year = year(Month))
-
 chicago_crime_with_chicago_pop <- chicago_crime_with_chicago_pop %>%
   filter(Year >= 2018) %>%
   inner_join(chicago_pop_ts, by = "Year") %>%
     mutate(TheftsPerCapitaChicago = NumThefts / `Population - Total` * 1000)
-head(chicago_crime_with_chicago_pop)
+unique(chicago_crime_with_chicago_pop$`Geography Type`)
+unique(chicago_crime_with_chicago_pop$Geography)
 ```
 
 ```{r}
