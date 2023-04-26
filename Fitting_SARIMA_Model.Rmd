@@ -1,0 +1,111 @@
+---
+title: "Fitting SARIMA Model"
+author: "Melanie McCord"
+date: "2023-04-20"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(fpp3)
+library(tidyverse)
+```
+
+```{r}
+thefts <- read_csv("data/thefts_unemployment_population.csv") %>%
+  mutate(Month = yearmonth(Month)) %>%
+  as_tsibble(index = Month)
+head(thefts)
+thefts_train <- thefts %>%
+  filter(year(Month) < 2018)
+```
+
+```{r}
+thefts %>%
+  autoplot(`Unemployment Rate`)
+```
+
+```{r}
+thefts |>
+  gg_tsdisplay(difference(`Unemployment Rate`, 12),
+               plot_type='partial', lag=36) +
+  labs(title="Seasonally differenced", y="")
+```
+
+```{r}
+thefts |>
+  gg_tsdisplay(difference(`Unemployment Rate`, 12) |> difference(),
+               plot_type='partial', lag=36) +
+  labs(title = "Double differenced", y="")
+```
+
+```{r}
+fit <- thefts_train |>
+  model(
+    arima012011 = ARIMA(`Unemployment Rate` ~ pdq(0,1,2) + PDQ(0,1,1)),
+    arima210011 = ARIMA(`Unemployment Rate` ~ pdq(2,1,0) + PDQ(0,1,1)),
+    auto = ARIMA(`Unemployment Rate`, stepwise = FALSE, approx = FALSE)
+  )
+```
+```{r}
+fit |> pivot_longer(everything(), names_to = "Model name",
+                     values_to = "Orders")
+#> # A mable: 3 x 2
+#> # Key:     Model name [3]
+#>   `Model name`                    Orders
+#>   <chr>                          <model>
+#> 1 arima012011  <ARIMA(0,1,2)(0,1,1)[12]>
+#> 2 arima210011  <ARIMA(2,1,0)(0,1,1)[12]>
+#> 3 auto         <ARIMA(2,1,0)(1,1,1)[12]>
+```
+```{r}
+fit %>%
+  forecast(h = "4 years") %>%
+  autoplot(thefts)
+```
+
+
+
+```{r}
+thefts %>%
+  autoplot(NumTheftsPer10000)
+```
+
+```{r}
+thefts |>
+  gg_tsdisplay(difference(NumTheftsPer10000, 12),
+               plot_type='partial', lag=36) +
+  labs(title="Seasonally differenced", y="")
+```
+
+```{r}
+thefts |>
+  gg_tsdisplay(difference(NumTheftsPer10000, 12) |> difference(),
+               plot_type='partial', lag=36) +
+  labs(title = "Double differenced", y="")
+```
+
+```{r}
+fit <- thefts_train |>
+  model(
+    arima012011 = ARIMA(NumTheftsPer10000 ~ pdq(0,1,2) + PDQ(0,1,1)),
+    arima210011 = ARIMA(NumTheftsPer10000 ~ pdq(2,1,0) + PDQ(0,1,1)),
+    auto = ARIMA(NumTheftsPer10000, stepwise = FALSE, approx = FALSE)
+  )
+```
+```{r}
+fit |> pivot_longer(everything(), names_to = "Model name",
+                     values_to = "Orders")
+#> # A mable: 3 x 2
+#> # Key:     Model name [3]
+#>   `Model name`                    Orders
+#>   <chr>                          <model>
+#> 1 arima012011  <ARIMA(0,1,2)(0,1,1)[12]>
+#> 2 arima210011  <ARIMA(2,1,0)(0,1,1)[12]>
+#> 3 auto         <ARIMA(2,1,0)(1,1,1)[12]>
+```
+```{r}
+fit %>%
+  forecast(h = "4 years") %>%
+  autoplot(thefts)
+```

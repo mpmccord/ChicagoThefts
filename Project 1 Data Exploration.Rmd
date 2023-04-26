@@ -15,6 +15,7 @@ library(fpp3)
 ```
 # Introduction
 In this part of this study, for initial modeling and analysis, I will be looking at the total number of thefts from January 2001 - March 11, 2023 that were reported. Note that due to the large size of the original dataset (nearly 8 million rows), the raw data is not included in this repository. The raw data can be accessed <a href="https://data.cityofchicago.org/api/views/ijzp-q8t2/rows.csv">here.</a>
+GitHub repository, including code for getting the variables: <a href="https://github.com/mpmccord/ChicagoThefts">here</a>.
 
 ## Data Overview
 
@@ -50,19 +51,23 @@ For this partition of the data, there are two variables: year/month and the numb
 The population data for this project was extracted using the US Census API ACS, which provided population data from 2005-2019 from Cook County. Since Cook County is the base of the Chicago metropolitan area, I chose to extract this data, and include a variable that scaled the number of thefts over time by the yearly population. So far, I haven't been able to track down monthly population data for the Chicago area.
 Note that also the data from 2001-2005 is harder to access as it is only available through the population estimates API. Therefore, although the original dataset goes from 2001-2023, at this time, I am focusing on 2005-2019. The population from the Chicago website is limited to 2018-2022.
 
-Additionally, I have chosen to focus on monthly unemployment data from 2001-2022 as a predictor of thefts, from the same time period.
+### Unemployment Data Overview
+The unemployment data is from the Illinois government website and focuses specifically on the Chicago metropolitan area. Although there are several variables related to Unemployment, for now, I will only focus on the unemployment rate for Chicago. Future work may extend this to more variables, such as the labor force participation rate. 
 
 ```{r}
 thefts <- read_csv("data/thefts_unemployment_population.csv") %>%
   mutate(Month = yearmonth(Month)) %>%
   as_tsibble(index = Month)
+head(thefts)
 ```
 
 # Data Exploration
 
 ## Time Series Plots of Variables {.tabset}
 
-### Raw Number of Thefts
+### Raw Number of Thefts - Original
+
+From the original number of thefts, there appears to be a decreasing trend, although not quite a linear one. There doesn't appear to be a cycle, although it's possible with more data, there would be one. There is a clear seasonal trend of a peak in summer followed bso y a dip in January. Although the data is decreasing generally, there is a really sharp decrease in the number of thefts since 2020, likely reated to the pandemic. The data does not have constant variance: there appears to be less variance as the data continues on.
 ```{r}
 lambda <- thefts |>
   features(NumThefts, features = guerrero) |>
@@ -70,6 +75,11 @@ lambda <- thefts |>
 lambda
 thefts %>%
   autoplot(NumThefts)
+```
+### Raw Number of Thefts - Box Cox Transformation
+
+With a box cox transformation, the data appears to have more stable variance. The seasonal trend is still prominent, as is the general trend of falling with a steep drop in the years 2020-2022.
+```{r}
   lambda <- thefts |>
   features(NumTheftsPer10000, features = guerrero) |>
   pull(lambda_guerrero)
@@ -82,30 +92,31 @@ thefts %>%
   autoplot(NumTheftsTransformed)
 ```
 
-
-```{r}
-thefts %>%
-  ACF(NumThefts) %>%
-  autoplot()
-
-thefts %>%
-  ACF(NumTheftsTransformed) %>%
-  autoplot()
-```
-
-```{r}
-thefts %>%
-  gg_lag(NumThefts, lags = 1:12)
-```
-
 ```{r}
 thefts %>%
   gg_season(NumThefts)
 ```
+The data appear to all have a really strong seasonal pattern, although the scale is significantly lower in 2021 and 2022, and is higher in 2012 and 2015. Note that in the next plot, we can see that the population of Chicago has been decreasing over time, which may partially explain this. Typically, there is a drop in thefts in the winter, and a peak in thefts around late spring and early fall, with it being highest in August.
 
 ```{r}
 thefts %>%
   gg_subseries(NumThefts)
+```
+This pattern is easier to see in the subseries plot, where clearly the number of thefts is highest between June and August, and lowest in February. Throughout all of the plots, we can see the number of thefts is decreasing over time, though note that the pandemic may be partially responsible, as well as the decline in population.
+## Autocorrelation of the Number of Thefts {.tabset}
+In both the transformed and the original data, in general the autocorrelation is strictly positive, although it follows a general decreasing, then increasing, then decreasing trend, with the exception of the pandemic, where the autocorrelation of the number of thefts appearing to decrease, and then increase. The decreasing autocorrelation plots are not statistically significant, however almost all of the positive autocorrelations are statistically significant, quite so. The transformed number of thefts also follow this pattern, but to a lesser extent.
+### ACF Plot of the Number of Thefts
+```{r}
+thefts %>%
+  ACF(NumThefts) %>%
+  autoplot()
+```
+
+### ACF Plot of the Box-Cox Transformed Number of Thefts
+```{r}
+thefts %>%
+  ACF(NumTheftsTransformed) %>%
+  autoplot()
 ```
 
 ### Number of Thefts Per 10,000 Chicago residents
@@ -115,9 +126,21 @@ thefts %>%
 thefts %>%
   autoplot(TheftsPer10000Transformed)
 ```
-# Plotting the Population Over the 10-Year Period
+Although the transformed number of thefts follows a similar decreasing pattern, it's less extreme than in the non-transformed data. It is highest around 2010, with again a sharp dip in winter and a peak in summer.
+
 ```{r}
-population <- read_csv("data/chicago_city_pop_estimates.csv") %>%
+thefts %>%
+  gg_season(NumTheftsPer10000)
+```
+
+```{r}
+thefts %>%
+  gg_subseries(NumTheftsPer10000)
+```
+# Plotting the Population Over the 10-Year Period
+There appears to be a strong quadratic trend to the population data from 2010-2022. There is no cyclicity, and since it is not seasonal data, there is also no seasonality. The variance appears pretty constant, so I don't think a box cox transformation is necessary.
+```{r}
+population <- read_csv("data/all_chicago_pop_estimates.csv") %>%
   as_tsibble(index = Year)
 population %>%
   autoplot(Population)
@@ -130,7 +153,7 @@ Initially, I will test the four simple models that we've covered in class: naive
 ## Raw Count of Thefts
 
 ### Forecasting Number of Thefts from 2017-2019 {.tabset}
-
+Forecasting the number of thefts has kind of mixed results. Although there is a clear seasonal pattern with the number of thefts increasing during the summer, the pandemic in the last few years totally changed the results. However, I will still try to predict the future given all the four models in class, first with a training/test set, then with cross validation
 #### Model
 ```{r}
 thefts_train <- thefts %>%
@@ -147,7 +170,13 @@ raw_count.model.forecast <- raw_count.model %>%
   forecast(h = "3 years")
 raw_count.model.forecast %>%
   autoplot(filter(thefts, year(Month) >= 2015))
+raw_count.model.forecast %>%
+  accuracy(thefts)
 ```
+
+The root mean squared error is fairly high for all of these. Note that the scale of the data is around 5000 thefts per month, so the root mean squared error is very high relative to the data. However, the best performing model appears to be the seasonal naive, which captures the actual pattern.
+
+Secondly, I will look at the plot of the residuals of the number of thefts.
 
 ```{r}
 raw_count.model <- thefts_train %>%
@@ -162,6 +191,7 @@ raw_count.model.forecast %>%
 raw_count.model %>%
   gg_tsresiduals()
 ```
+There is strong autocorrelation in the ACF plot. The residuals appear to be left skewed, so not normally distributed. The residuals do not appear to be white noise.
 
 #### Plot
 ```{r}
@@ -169,11 +199,6 @@ raw_count.model.forecast %>%
   autoplot(thefts)
 ```
 
-#### Tables
-```{r}
-raw_count.model.forecast %>%
-  accuracy(thefts)
-```
 
 ## Forecasting Number of Thefts Per Capita
 
@@ -190,9 +215,15 @@ percapita.model.forecast <- percapita.model %>%
   forecast(h = "3 years")
 percapita.model.forecast %>%
   autoplot(thefts)
+percapita.model.forecast %>%
+  accuracy(thefts)
 ```
 
-#### Plot
+We see similar results with the scaled thefts, however as we would expect with the scaling, the shape of the number of thefts is slightly different: obviously the scale is much smaller, and there also appears to be less variance. Again, none of the models appear to fit the data that well, although the seasonal naive appears to do the best. Again, all of the models have relatively high counts in proportion to the data.
+
+#### Transformed Data
+
+Since the data for the number of thefts per 10,000 residents of Chicago needed a box cox transformation, I will test whether that improved the model performance.
 ```{r}
 percapita.model.t <- thefts_train %>%
   model(
@@ -210,6 +241,8 @@ percapita.model.forecast %>%
   accuracy(thefts)
 ```
 
+
+
 #### Tables
 ```{r}
 percapita.model.forecast %>%
@@ -219,13 +252,14 @@ percapita.model.forecast %>%
 ### Residuals of the Best Method
 
 As I expected, the best performing model appears to be the seasonal naive model, across all measures. Now, I will look at the residuals to see whether they look like white noise.
+There is still significant autocorrelation across much of the seasonal data.  However, there appear to be fewer points with significant autocorrelation. The residuals are more clearly left skewed here.
 
 ```{r}
-raw_count.snaive <- thefts %>%
+percapita <- thefts %>%
   model(
     snaive = SNAIVE(NumTheftsPer10000)
   )
-raw_count.snaive %>%
+percapita %>%
   gg_tsresiduals()
 
 raw_count.t.snaive <- thefts %>%
@@ -236,12 +270,12 @@ raw_count.t.snaive %>%
   gg_tsresiduals()
 ```
 
-There is still significant autocorrelation in these residuals, and the distribution looks slightly left skewed. Therefore, the seasonal naive method is not appropriate for predicting the number of thefts over time.
+There is still significant autocorrelation in these residuals, and the distribution looks left skewed. Therefore, the seasonal naive method is not appropriate for predicting the number of thefts over time.
 
 ## Exploring the Unemployment Variable {.tabsets}
 
 This variable, taken from the Illinois website, explores the un-seasonally adjusted unemployment rate in Chicago.
-
+Generally, there appears to be a decreasing trend among the unemployment from January 2015 to December 2022. However, again the pandemic significantly changed the unemployment rate: there is a dip in 2020, followed by a sharp peak afterwards, likely from people losing their jobs from the pandemic. The data is not seasonally adjusted, and there is a clear seasonal trend to the data of a spike every few months, particularly January.
 ### Original Variable
 ```{r}
 thefts %>%
@@ -260,21 +294,36 @@ thefts %>%
   autoplot(UnemploymentRateTransformed)
 ```
 
-### Classical Decomposition {.tabset}
+The transformed unemployment rate looks similar, although not identical. The variance is somewhat more stable, but the major issue is still the spike in 2020 of unemployment.
 
-#### Additive
-```{r}
-thefts %>%
-  gg_lag(`Unemployment Rate`, lags = 1:12)
-```
 ```{r}
 thefts %>%
   gg_season(`Unemployment Rate`)
 ```
+
+There appears to typically be a small spike in unemployment in January, and peaks dring June. However, again 2020 is very different from the rest of the data, with a gradual increase from February to March, followed by a sharp peak in April and remains relatively high throughout 2020.
+
+### Lag plots
+
+The lag plots show a strong autocorrelation, so this data is likely not white noise.
+```{r}
+thefts %>%
+  gg_lag(`Unemployment Rate`, lags = 1:12)
+```
+
+```{r}
+thefts %>%
+  gg_season(`Unemployment Rate`)
+```
+
 ```{r}
 thefts %>%
   gg_subseries(`Unemployment Rate`)
 ```
+
+From the subseries plot, we can see that typically unemployment was decreasing in all months, with the exception of 2020, where it remains consistently much higher.
+
+For this variable, I have chosen to do cross validation to select the model, then do a smaller training and test set once the general model has been evaluated. Again, I expect worse performance in 2020 than in other years.
 
 ```{r}
 fc <- thefts %>%
@@ -297,8 +346,12 @@ fc %>%
   accuracy(thefts)
 ```
 
+From cross validation, the bet performing model varies based on the metric. However, overall, the naive model and the random walk with drift appear to perform the best. There is a linear trend across most of the data, and the seasonal pattern exists but doesn't appear to be that significant.
+
 ```{r}
 thefts |>
   model(RW(`Unemployment Rate` ~ drift())) |>
   gg_tsresiduals()
 ```
+
+With these residuals, overall the ACf plot doesn't show any significant autocorrelation. However, the residuals do appear skewed and not normally distributed, and again there is that sharp peak in 2020. 

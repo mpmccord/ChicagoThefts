@@ -21,8 +21,6 @@ chicago_population2 <- read_csv("data/Chicago_Population_Counts.csv") %>%
   add_row(chicago_population)
 thefts_pop <- thefts %>%
   left_join(chicago_population2, by = "Year")
-thefts_pop <- thefts_pop %>%
-  drop_na(Population)
 
 thefts_pop_smaller = thefts_pop %>%
   select(c(NumThefts, Month, Population))
