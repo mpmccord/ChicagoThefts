@@ -1,14 +1,11 @@
 ---
 title: "Unemployment in Chicago"
 author: "Melanie McCord"
-date: "`r Sys.Date()`"
 output: 
-  html_document:
+  pdf_document:
     toc: true
-    toc_float: true
-    theme: cerulean
-    code_folding: "show"
-bibliography: 
+bibliography: citations/references.bib
+csl: citations/apa.csl
 ---
 
 ```{r setup, include=FALSE}
@@ -21,7 +18,7 @@ library(tidyverse)
 
 ## Motivation
 
-The purpose of this project was to explore unemployment in Chicago and to understand how it changed in relation to the pandemic. The unemployment rate can be affected by the economy, growth in different sectors, as well as other factors. However, the pandemic resulted in major changes to our way of lives, due to closing of in-person events, resulting in major economic changes. In order to understand these trends and how drastic they were, for my project, I chose to explore the unemployment rate in Chicago.
+The purpose of this project was to explore unemployment in Chicago and to understand how it changed in relation to the pandemic. The unemployment rate tends to follow a cyclic trend, tending to peak with recessions and fall during economic growth. @labonte_what_nodate However, the pandemic created major economic changes, including a large peak in the unemployment rate. @ma_modern_2020 In order to understand these trends and how drastic they were, for my project, I chose to explore the unemployment rate in Chicago.
 
 ## Dataset
 
@@ -37,26 +34,19 @@ unemployment_chicago <- readxl::read_excel("data/Chicago-Naperville-ArlingtonHei
   as_tsibble(index = Month)
 head(unemployment_chicago)
 ```
-The data is seasonal, in this case monthly. 
+The data is seasonal, in this case monthly. The data consists of 7 other variables, labor force, labor force participation rate, employed, employment participation rate, unemployed, and unemployment rate. For the purposes of this project, I will simply focus on the unemployment rate.
+
+## Visualizing the Data
 
 ```{r}
 unemployment_chicago %>%
   autoplot(`Unemployment Rate`)
 ```
 
-The data shows clear seasonality, as well as cyclicity in drops and falls of the unemployment rate. There doesn't appear to be any trend in the data, as the sudden growth followed by sharp dips (i.e. economic growth vs. recessions) seems evident in the cyclicity. 
+The data shows clear seasonality, as well as cyclicity in drops and falls of the unemployment rate, i.e. recessions vs economic growth. There doesn't appear to be a trend in the data, as the sudden growth followed by sharp dips (i.e. economic growth vs. recessions) seems evident in the cyclicity. 
 
-## Exploring the Seasonality
+# Decomposing the Seasonal and Trend Components
 
-```{r}
-unemployment_chicago %>%
-  gg_season(`Unemployment Rate`)
-```
-
-```{r}
-unemployment_chicago %>%
-  gg_subseries(`Unemployment Rate`)
-```
 ## STL Decomposition
 ```{r}
 unemployment_chicago %>%
@@ -66,6 +56,7 @@ unemployment_chicago %>%
   components() %>%
   autoplot()
 ```
+Although there is definitely a seasonal component, it appears to be less significant than the trend. Mostly the remainder from the STL decomposition looks very constant, but there is a very sharp peak in the remainder in 2020. The seasonality appears to follow a similar pattern, however the 5 more recent years show a growth in the variance of the seasonality.
 
 ## Exploring the Autocorrelation
 
@@ -74,25 +65,35 @@ unemployment_chicago %>%
   ACF(`Unemployment Rate`) %>%
   autoplot()
 ```
+There is very significant autocorrelation throughout the entire cycles, that is steadily decreasing with each season. The autocorrelation is strictly positive.
 
 ```{r}
 unemployment_chicago %>%
   gg_lag(`Unemployment Rate`, lags = 1:12, geom = "point")
 ```
 
+The lag plots also show strong positive autocorrelation, that is steadily decreasing with each lag, though this may be due to the outliers among each lag.
+
 ```{r}
 unemployment_chicago %>%
   PACF(`Unemployment Rate`) %>%
   autoplot()
 ```
+The partial autocorrelation indicates that the first lag has a very strong partial autocorrelation, and the 13th lag also appears to have a significant partial autocorrelation, although it is less significant than the first one.
 
 # Identifying Appropriate Models
+
+For the purposes of this project, I've chosen to compare variations of two common models, ARIMA and ETS, and compare their performance on this dataset.
+
+First, I will consider whether to apply a box cox transformation. The box cox transformation can help with unstable variance by applying a power transformation to the data. For this purpose, Guerrero's method for defining the optimal value of lambda was used. @guerrero_time-series_1993
 
 ## Box Cox Transformation
 ```{r}
 unemployment_chicago %>%
   features(`Unemployment Rate`, guerrero)
 ```
+
+Since the suggested lambda is close to -1, I will apply an inverse transformation on the unemployment data, since box_cox(X, -1) = inv(X, -1). I will compare both the models with the inverse transformation and the models without.
 
 ## Fitting an ARIMA and ETS Model
 
@@ -111,7 +112,7 @@ unemployment.fit <- unemployment_chicago_train %>%
   )
 ```
 
-### Forecasting: Visualization and Accuracy
+### Forecasting
 
 ```{r}
 unemployment.fit %>%
@@ -119,18 +120,24 @@ unemployment.fit %>%
   autoplot(unemployment_chicago)
 ```
 
+Both inverse methods, as well as the ETS method, resulted in nonsensical prediction intervals. Unemployment rate is constrained to $(0, 1)$. Multiplying this by 100, as the US bureau of labor statistics appears to have done, results in prediction intervals that include impossibly high values for both inverse models, and negative values for the normal ETS model. Therefore, the model whose prediction intervals appear to make the most sense in context is the ARIMA forecast.
+
 ```{r}
 unemployment.fit %>%
   forecast(h = "2 years") %>%
   accuracy(unemployment_chicago)
 ```
 
+However, the best performing model on the future data is the ETS model, with a RMSE of around 2.53 percentage points. However, it may not perform as well on past data.
+
 ```{r}
 augment(unemployment.fit) %>%
   features(.innov, ljung_box)
 ```
 
-Although the ETS model performs the best on the future data, the ETS model appears to have very significant autocorrelation in the residuals of the past data, with a p-value of nearly 0. Further, the prediction intervals for the auto ETS data are very wide, stretching to negative numbers, which does not make sense to interpret in context since unemployment rate should be between 0 and 100%.
+Although the ETS model performs the best on the future data, the ETS model appears to have very significant autocorrelation in the residuals of the past data, with a p-value of > 0.01. Further, the prediction intervals for the auto ETS data are very wide, stretching to negative numbers, which does not make sense to interpret in context since unemployment rate should be between 0 and 100%.
+
+The models with the least significant autocorrelation are the two ARIMA models, which may indicate that the ARIMA model is a better fit for this dataset.
 
 ### Exploring the Residuals
 ```{r}
@@ -148,23 +155,23 @@ The ACF plot of the residuals of the automatically selected ETS model shows one 
 
 ```{r}
 unemployment.fit %>%
-  select(etsauto) %>%
+  select(arimaauto) %>%
   gg_tsresiduals()
+```
+Although the ARIMA model performed worse on the test set, it appears to have captured the training set significantly better. There is no significant autocorrelation in the residuals, although the normally distributed assumption may be violated by the residuals, so bootstrapping may be more appropriate.
 
+```{r}
 unemployment.fit %>%
   select(arimaauto) %>%
   augment() %>%
   autoplot(UnemploymentRate) + geom_line(aes(y = .fitted), color = "blue")
-
-unemployment.fit %>%
-  select(arimainv) %>%
-  augment() %>%
-  autoplot(UnemploymentRate) + geom_line(aes(y = .fitted), color = "blue")
 ```
+The ARIMA models appear to fit the training data better, and it's harder to distinguish $\hat{y_t}$ from $y_t$ on the training data.
 
 ```{r}
 unemployment.fit
 ```
+For the ETS model, the algorithm automatically selected multiplicative errors, additive damped trend, and additive seasonality. For the ARIMA model, it's chosen no autoregressive terms, 1 degree of differencing, and no lagged forecast errors for the non-seasonal part, whereas it's chosen no autoregressive terms, no differencing, and 2 lagged seasonal terms for the seasonal part.
 
 ```{r}
 unemployment.fit %>%
@@ -183,3 +190,4 @@ However, there are some ways to get around that. Future work may include using a
 
 Additionally, cross validation on the data exploration may improve the results somewhat since it's easier to predict data less far into the future, but even so, the changes with respect to the pandemic were pretty drastic and the models struggle to adapt.
 
+# Bibliography
