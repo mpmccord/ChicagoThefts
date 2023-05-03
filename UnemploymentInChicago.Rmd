@@ -175,16 +175,15 @@ For the ETS model, the algorithm automatically selected multiplicative errors, a
 
 ```{r}
 unemployment.fit %>%
-  select(etsauto) %>%
-  augment() %>%
-  autoplot(UnemploymentRate) + geom_line(aes(y = .fitted), color = "blue")
+  select(arimaauto) %>%
+  gg_tsresiduals()
 ```
 
 Although the ARIMA model fares worse on future data, the residuals do indeed look like white noise, although the normality or skew assumption may be violated due to a few large outliers. It would appear that the ARIMA model may be the better of these models, but overall, none of the models appear to perform that well.
 
 # Conclusions and Future Work
 
-In conclusion, the pandemic drastically changed the unemployment rate in Chicago. Although the ARIMA model was able to capture the past data, it failed to predict future data. The ETS model was closer to the actual data because its default predictions were lower than the ARIMA model, but the ARIMA model overall captured the unemployment data better. The inverse transformation did not improve the results for this particular dataset and in fact, the prediction intervals faired worse because of it.
+In conclusion, the pandemic drastically changed the unemployment rate in Chicago. Although the ARIMA model was able to capture the past data, it failed to predict future data. The ETS model was closer to the actual data because its default predictions were lower than the ARIMA model, but the ARIMA model overall captured the unemployment data better. The inverse transformation did not improve the results for this particular dataset and in fact, the prediction intervals fared worse because of it.
 
 However, there are some ways to get around that. Future work may include using a piecewise function for the dataset so that the years that the pandemic happened and/or other recessions are considered separately from other years. An issue with this data is that while cyclic recessions are indeed accounted for in other years, the pandemic had a much more drastic effect so that the models struggled to adapt. Additionally, I may consider using an indicator variable for the pandemic and/or other recessions, since in this case it was clear that the cause of the peak in unemployment was related to the pandemic.
 
