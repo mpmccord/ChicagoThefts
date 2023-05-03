@@ -1,0 +1,242 @@
+---
+title: "ATSA Final Project Draft"
+author: "Melanie McCord"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    toc: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(fpp3)
+library(tidyverse)
+```
+
+#  Introduction
+
+The purpose of this project was to explore unemployment and the number of thefts per capita in Chicago over time, and to understand how both were affected by the pandemic.
+
+Overall, I found that the pandemic drastically changed both unemployment and number of thefts per capita. All of the models appeared to capture the trend prior to 2019, but failed at predicting afterwards. Cross-validation appeared to do better than using a training and test set, however.
+
+# Data Exploration
+
+## Unemployment
+
+```{r}
+unemployment_chicago <- readxl::read_excel("data/Chicago-Naperville-ArlingtonHeights_MD_notseasadj.xls", skip = 6) %>%
+  drop_na() %>%
+  rename(Month = `Month/Year`) %>%
+  mutate(`Month` = yearmonth(Month)) %>%
+  as_tsibble(index = Month)
+
+unemployment_chicago %>%
+  autoplot(`Unemployment Rate`)
+```
+
+### Exploring the Autocorrelation
+
+```{r}
+unemployment_chicago %>%
+  ACF(`Unemployment Rate`) %>%
+  autoplot()
+```
+
+```{r}
+unemployment_chicago %>%
+  gg_lag(`Unemployment Rate`, lags = 1:12, geom = "point")
+```
+
+```{r}
+unemployment_chicago %>%
+  PACF(`Unemployment Rate`) %>%
+  autoplot()
+```
+
+## Number of Thefts
+
+The second variable that was considered was the number of thefts, since this was my primary research question. 
+
+### Raw Number of Thefts
+```{r}
+thefts_by_month <- read_csv("data/year_month_num_thefts.csv", show_col_types = FALSE) %>%
+  mutate(Month = yearmonth(Month)) %>%
+  select(Month, NumThefts) %>%
+  as_tsibble(index = Month)
+thefts_by_month %>%
+  autoplot(NumThefts)
+```
+
+### Exploring the Autocorrelation
+
+```{r}
+thefts_by_month %>%
+  ACF(NumThefts) %>%
+  autoplot()
+```
+
+```{r}
+thefts_by_month %>%
+  gg_lag(NumThefts, lags = 1:12, geom = "point")
+```
+
+```{r}
+thefts_by_month %>%
+  PACF(NumThefts) %>%
+  autoplot()
+```
+
+### Number of Thefts Per Capita
+```{r}
+thefts_by_month %>%
+  ACF(NumThefts) %>%
+  autoplot()
+```
+
+```{r}
+thefts_by_month %>%
+  gg_lag(NumThefts, lags = 1:12, geom = "point")
+```
+
+```{r}
+thefts_by_month %>%
+  PACF(NumThefts) %>%
+  autoplot()
+```
+# Identifying Appropriate Models
+## Unemployment Rate
+```{r}
+unemployment_chicago %>%
+  features(`Unemployment Rate`, guerrero)
+```
+
+```{r}
+unemployment_chicago <- unemployment_chicago %>%
+  mutate(UnemploymentRate = `Unemployment Rate`)
+unemployment_chicago_train <- unemployment_chicago %>%
+  filter(year(Month) < 2021)
+unemployment.fit <- unemployment_chicago_train %>%
+  mutate(UnemploymentRate = `Unemployment Rate`) %>%
+  model (
+    etslog = ETS(box_cox(UnemploymentRate, lambda = -1))
+    #autoarimabox = ARIMA(box_cox(`Unemployment Rate`, lambda = -1))
+  )
+```
+
+```{r}
+unemployment_chicago_train <- unemployment_chicago %>%
+  filter(year(Month) < 2021)
+unemployment.fit <- unemployment_chicago_train %>%
+  model (
+    ets = ETS(UnemploymentRate),
+    autoarima = ARIMA(UnemploymentRate),
+    etslog = ETS(box_cox(UnemploymentRate, lambda = -1)),
+    autoarimabox = ARIMA(box_cox(`Unemployment Rate`, lambda = -1))
+  )
+```
+
+```{r}
+unemployment.fit %>%
+  forecast(h = "2 years") %>%
+  autoplot(unemployment_chicago)
+```
+```{r}
+unemployment.fit %>%
+  forecast(h = "2 years") %>%
+  accuracy(unemployment_chicago)
+```
+
+```{r}
+unemployment.fit %>%
+  select(ets) %>%
+  gg_tsresiduals()
+```
+```{r}
+unemployment.fit %>%
+  select(autoarimalog) %>%
+  gg_tsresiduals()
+```
+
+## Number of Thefts Per Capita
+# Fitting Models
+```{r}
+thefts_by_month %>%
+  features(NumThefts, guerrero)
+thefts_train <- thefts_by_month %>%
+  filter(year(Month) < 2021)
+fit <- thefts_train %>%
+  model (
+    ets = ETS(NumThefts),
+    etsqrt = ETS(sqrt(NumThefts)),
+    arima = ARIMA(NumThefts),
+    arimasqrt = ARIMA(sqrt(NumThefts)),
+    tslm = TSLM(NumThefts ~ season() + trend(knots = c(yearmonth("January 2020"), yearmonth("January 2022")))),
+    tslmsqrt = TSLM(sqrt(NumThefts) ~ season() + trend(knots = c(yearmonth("January 2020"), yearmonth("January 2022")))))
+```
+## Number of Thefts
+```{r}
+fit %>%
+  forecast(h = "2 years") %>%
+  autoplot(thefts_by_month)
+
+fit %>%
+  forecast(h = "2 years") %>%
+  accuracy(thefts_by_month)
+```
+
+
+## Number of Thefts and Unemployment Rate
+```{r}
+full_data <- unemployment_chicago %>%
+  left_join(thefts_by_month, by = "Month") %>%
+  drop_na(NumThefts)
+train_data <- full_data %>%
+  filter(year(Month) < 2021)
+test_data <- full_data %>%
+  filter(year(Month) >= 2021)
+fit <- train_data %>%
+  model(
+    arima = ARIMA(NumThefts),
+    ets = ETS(NumThefts),
+    arimaunemployment = ARIMA(NumThefts ~ `Unemployment Rate`),
+    tslmunemployment = TSLM(NumThefts ~ `Unemployment Rate` + season() + trend()),
+    tslm = TSLM(NumThefts ~ season() + trend()),
+    tslmseason = TSLM(NumThefts ~ season())
+  )
+fit.forecast <- fit %>%
+  forecast(test_data)
+
+fit.forecast %>%
+  autoplot(full_data)
+
+fit.forecast %>%
+  accuracy(test_data)
+
+fit %>%
+  select(tslmunemployment) %>%
+  gg_tsresiduals()
+fit %>%
+  select(tslmunemployment) %>%
+  augment() %>%
+  features(.innov, ljung_box)
+
+fit %>%
+  select(tslmunemployment) %>%
+  forecast(test_data) %>%
+  autoplot(full_data)
+
+fit %>%
+  select(arimaunemployment) %>%
+  forecast(test_data) %>%
+  autoplot(full_data)
+
+fit %>%
+  select(arimaunemployment) %>%
+  gg_tsresiduals()
+
+augment(fit) %>%
+  features(.innov, ljung_box)
+```
+# Results
+
+# Conclusions

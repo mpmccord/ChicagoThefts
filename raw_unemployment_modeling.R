@@ -20,7 +20,8 @@ unemployment.fit <- unemployment_chicago_train %>%
   model(
     ets = ETS(`Unemployment Rate`),
     arima = ARIMA(`Unemployment Rate`),
-    snaive = SNAIVE(`Unemployment Rate`)
+    snaive = SNAIVE(`Unemployment Rate`),
+    tslm = TSLM(`Unemployment Rate`)
   )
 
 unemployment.fit %>%
