@@ -5,31 +5,152 @@ date: "`r Sys.Date()`"
 output: ioslides_presentation
 ---
 
-```{r setup, include=FALSE}
+```{r setup, include=FALSE, warning=FALSE}
 knitr::opts_chunk$set(echo = FALSE)
+library(fpp3)
+library(tidyverse)
+unemployment_chicago <- readxl::read_excel("data/Chicago-Naperville-ArlingtonHeights_MD_notseasadj.xls", skip = 6) %>%
+  drop_na() %>%
+  rename(Month = `Month/Year`) %>%
+  mutate(`Month` = yearmonth(Month)) %>%
+  as_tsibble(index = Month)
 ```
 
-## R Markdown
+## Introduction
 
-This is an R Markdown presentation. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+-  Explore Unemployment in Chicago
+-  How has it changed with the pandemic?
+-  Can we predict the future?
 
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document.
-
-## Slide with Bullets
-
-- Bullet 1
-- Bullet 2
-- Bullet 3
-
-## Slide with R Output
-
-```{r cars, echo = TRUE}
-summary(cars)
+```{r unemployment_chicago_original}
+unemployment_chicago %>%
+  autoplot(`Unemployment Rate`)
 ```
 
-## Slide with Plot
+## Unemployment in Chicago
 
-```{r pressure}
-plot(pressure)
+
+
+```{r head, echo = TRUE}
+colnames(unemployment_chicago)
 ```
 
+## Characteristics
+
+-  Cyclical pattern (recessions)
+-  Seasonality
+-  Extreme peak around the start of the pandemic
+
+```{r unemployment_chicago}
+unemployment_chicago %>%
+  autoplot(`Unemployment Rate`)
+```
+
+
+## Autocorrelation
+
+```{r acf}
+unemployment_chicago %>%
+  ACF(`Unemployment Rate`) %>%
+  autoplot()
+```
+
+## Partial Autocorrelation
+
+```{r pacf}
+unemployment_chicago %>%
+  PACF(`Unemployment Rate`) %>%
+  autoplot()
+```
+
+
+## Identifying Appropriate Models
+
+-  Inverse transformation
+-  ARIMA and ETS Models
+-  Can any of them cope with the changes
+
+## Methodology
+
+-  Training set: data before 2021
+-  Automatically selected ARIMA and ETS models
+-  Compare with transformed data
+
+
+## Models
+
+```{r accuracy}
+unemployment_chicago <- unemployment_chicago %>%
+  mutate(UnemploymentRate = `Unemployment Rate`)
+unemployment_chicago_train <- unemployment_chicago %>%
+  filter(year(Month) < 2021)
+unemployment.fit <- unemployment_chicago_train %>%
+  mutate(UnemploymentRate = `Unemployment Rate`) %>%
+  model (
+    etsinv = ETS(box_cox(UnemploymentRate, lambda = -1)),
+    arimainv = ARIMA(box_cox(UnemploymentRate, lambda = -1)),
+    arimaauto = ARIMA(UnemploymentRate),
+    etsauto = ETS(UnemploymentRate)
+  )
+unemployment.fit %>%
+  pivot_longer(everything(), names_to = "models")
+```
+# Accuracy
+```{r}
+unemployment.fit %>%
+  forecast(h = "2 years") %>%
+  accuracy(unemployment_chicago) %>%
+  arrange(RMSE)
+```
+
+## CV and AICc Values
+
+```{r}
+glance(unemployment.fit)
+```
+
+## Plotted Results
+
+```{r fitted}
+unemployment.fit %>%
+  forecast(h = "2 years") %>%
+  autoplot(unemployment_chicago)
+```
+
+## Ljung-Box Test on Residuals
+```{r}
+augment(unemployment.fit) %>%
+  features(.innov, ljung_box)
+```
+
+## Predicted
+
+```{r pred}
+unemployment.fit %>%
+  augment() %>%
+  autoplot(.fitted) + geom_line(aes(y = UnemploymentRate), color = "black")
+```
+
+## ARIMA Residuals
+```{r arima}
+unemployment.fit %>%
+  select(arimaauto) %>%
+  gg_tsresiduals()
+```
+
+
+## Conclusions
+
+-  Models were unable to adapt to the rapid changes during the pandemic
+-  Unemployment rate in Chicago strongly affected by the pandemic
+```{r unemployment_chicago_pred}
+unemployment.fit %>%
+  select(arimaauto) %>%
+  forecast(h = "2 years") %>%
+  autoplot(unemployment_chicago)
+```
+
+## Future Work
+
+-  Implement knots for the pandemic
+-  Add an indicator variable for the pandemic
